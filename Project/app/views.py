@@ -12,7 +12,7 @@ from .serializers import(
 )
 
 class RegisterView(generics.CreateAPIView):
-    querryset = User.objects.all()
+    queryset = User.objects.all()
     serializer_class=UserRegistrationSerializer
 
 class LoginView(generics.GenericAPIView):
@@ -34,7 +34,7 @@ class LoginView(generics.GenericAPIView):
             })
         return Response({"error":"Invalid credentials"},status=status.HTTP_401_UNAUTHORIZED)
     
-class ProfileView(generics.RetrieveAPIViews):
+class ProfileView(generics.RetrieveAPIView):
     serializer_class=UserProfile
     permission_classes= [IsAuthenticated]
 
