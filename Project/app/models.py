@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import User
 
 class UserProfile(models.Model):
@@ -39,11 +40,11 @@ class ChatRoom(models.Model):
 class FriendRequest(models.Model):
     Status_Choices=(
         ("pending","Pending"),
-        ("accepter","Accepter"),
+        ("accepted","Accepted"),
         ("rejected","Rejected"),
     )
     sender=models.ForeignKey(User,on_delete=models.CASCADE,related_name="sent_requests")
-    receiver=models.ForeignKey(User,on_delete=models.CASCADE,related_name="recieved_requests")
+    receiver=models.ForeignKey(User,on_delete=models.CASCADE,related_name="received_requests")
     status=models.CharField(max_length=10,choices=Status_Choices,default="pending")
     created_at=models.DateTimeField(auto_now_add=True)
 
