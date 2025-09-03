@@ -56,7 +56,6 @@ def save_message_to_db(content:str,room_id:int,sender_id:int):
     
     message_id = cursor.lastrowid
     
-    # Get sender username
     cursor.execute("SELECT username FROM auth_user WHERE id = ?", (sender_id,))
     sender_result = cursor.fetchone()
     sender_username = sender_result[0] if sender_result else "Unknown"
