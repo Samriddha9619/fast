@@ -1,10 +1,18 @@
 from django.urls import path
-
-from .views import RegisterView,LoginView,ProfileView
+from . import views
 
 urlpatterns = [
-    path('auth/register',RegisterView.as_view(),name='register'),
-    path('auth/login/',LoginView.as_view(),name='login'),
-    path('auth/profile/',ProfileView.as_view(),name='profile'),
+    path('auth/register/', views.register, name='register'),
+    path('auth/login/', views.login, name='login'),
+    path('auth/profile/', views.profile, name='profile'),
     
+    path('friends/', views.get_friends, name='get_friends'),
+    path('friends/requests/', views.get_friend_requests, name='get_friend_requests'),
+    path('friends/requests/send/', views.send_friend_request, name='send_friend_request'),
+    path('friends/requests/<int:request_id>/respond/', views.respond_friend_request, name='respond_friend_request'),
+    path('users/search/', views.search_users, name='search_users'),
+    
+    path('chatrooms/', views.get_chatrooms, name='get_chatrooms'),
+    path('chatrooms/create/', views.create_chatroom, name='create_chatroom'),
+    path('chatrooms/<int:room_id>/messages/', views.get_messages, name='get_messages'),
 ]
