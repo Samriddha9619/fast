@@ -239,6 +239,7 @@
             max-width: 60%;
             margin-bottom: 15px;
             animation: fadeIn 0.3s;
+            position: relative;
         }
 
         @keyframes fadeIn {
@@ -482,11 +483,47 @@
             margin-bottom: 10px;
             text-align: center;
         }
+
+        .message-actions {
+            position: absolute;
+            top: -10px;
+            right: 10px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            display: none;
+            z-index: 10;
+        }
+
+        .message:hover .message-actions {
+            display: block;
+        }
+
+        .message-action-btn {
+            padding: 4px 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .message-action-btn:hover {
+            color: #667eea;
+        }
+
+        .delete-confirm-modal {
+            text-align: center;
+        }
+
+        .delete-confirm-modal .btn {
+            width: auto;
+            margin: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Auth Screen -->
         <div id="authScreen">
             <div class="auth-container">
                 <div id="loginForm">
@@ -531,7 +568,6 @@
             </div>
         </div>
 
-        <!-- Chat Screen -->
         <div id="chatScreen" class="chat-layout hidden">
             <div class="sidebar">
                 <div class="sidebar-header">
@@ -546,7 +582,6 @@
                     <div class="tab" onclick="switchTab('requests')">Requests <span id="requestBadge" class="badge hidden">0</span></div>
                 </div>
 
-                <!-- Chats Tab -->
                 <div id="chatsTab" class="sidebar-content">
                     <button class="create-chat-btn" onclick="showCreateChatModal()">+ New Chat</button>
                     <div class="search-box">
@@ -555,7 +590,6 @@
                     <div id="chatsList"></div>
                 </div>
 
-                <!-- Friends Tab -->
                 <div id="friendsTab" class="sidebar-content hidden">
                     <div class="search-box">
                         <input type="text" id="userSearch" placeholder="Search users..." oninput="searchUsers(this.value)">
@@ -563,7 +597,6 @@
                     <div id="friendsList"></div>
                 </div>
 
-                <!-- Requests Tab -->
                 <div id="requestsTab" class="sidebar-content hidden">
                     <h4 style="padding: 10px; color: #666;">Received Requests</h4>
                     <div id="receivedRequests"></div>
@@ -600,7 +633,6 @@
         </div>
     </div>
 
-    <!-- Create Chat Modal -->
     <div id="createChatModal" class="modal">
         <div class="modal-content">
             <span class="modal-close" onclick="closeCreateChatModal()">&times;</span>
@@ -646,6 +678,17 @@
         </div>
     </div>
 
+    <div id="deleteConfirmModal" class="modal">
+        <div class="modal-content delete-confirm-modal">
+            <h3>Delete Message</h3>
+            <p>Are you sure you want to delete this message?</p>
+            <div style="margin-top: 20px;">
+                <button class="btn btn-reject" onclick="confirmDeleteMessage()">Delete</button>
+                <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_URL = 'http://localhost:8000/api';
         const WS_URL = 'ws://localhost:8001/ws';
@@ -660,15 +703,14 @@
         let chatRooms = [];
         let typingTimeout = null;
         let isAnonymousMode = false;
+        let messageToDelete = null;
 
-        // Initialize
         if (token) {
             showChatScreen();
             initializeWebSocket();
             loadData();
         }
 
-        // Auth Functions
         async function handleLogin(e) {
             e.preventDefault();
             const loginUsername = document.getElementById('loginUsername').value;
@@ -744,7 +786,6 @@
             showChatScreen();
             document.getElementById('userStatus').textContent = 'Anonymous Mode';
             
-            // Create/join anonymous chat
             createAnonymousChat();
         }
 
@@ -803,7 +844,6 @@
             setTimeout(() => el.classList.add('hidden'), 5000);
         }
 
-        // WebSocket
         function initializeWebSocket() {
             const wsUrl = token ? `${WS_URL}?token=${token}` : WS_URL;
             ws = new WebSocket(wsUrl);
@@ -829,10 +869,13 @@
                 if (data.chat_room_id === currentChatRoom?.id) {
                     showTypingIndicator(data.user_name, data.is_typing);
                 }
+            } else if (data.type === 'message_deleted') {
+                if (data.chat_room_id === currentChatRoom?.id) {
+                    removeMessageFromUI(data.message_id);
+                }
             }
         }
 
-        // Data Loading
         async function loadData() {
             if (isAnonymousMode) return;
             await Promise.all([
@@ -881,7 +924,6 @@
             }
         }
 
-        // Rendering
         function renderChatRooms() {
             const list = document.getElementById('chatsList');
             if (chatRooms.length === 0) {
@@ -951,7 +993,6 @@
                 `).join('');
         }
 
-        // Chat Functions
         async function openChat(roomId) {
             try {
                 const res = await fetch(`${API_URL}/chatrooms/${roomId}/messages/`, {
@@ -965,7 +1006,6 @@
                 document.getElementById('chatContainer').classList.remove('hidden');
                 document.getElementById('chatTitle').textContent = currentChatRoom.name || `Chat #${roomId}`;
                 
-                // Show anonymous indicator if in anonymous chat
                 const anonIndicator = document.getElementById('anonymousIndicator');
                 if (currentChatRoom.room_type === 'anonymous') {
                     anonIndicator.textContent = `🎭 Anonymous Chat - You appear as "${anonymousName || 'Anonymous'}"`;
@@ -974,7 +1014,6 @@
                     anonIndicator.classList.add('hidden');
                 }
                 
-                // Update subtitle
                 let subtitle = '';
                 if (currentChatRoom.room_type === 'private') subtitle = 'Private Chat';
                 else if (currentChatRoom.room_type === 'group') subtitle = `Group Chat • ${currentChatRoom.participant_count || 0} members`;
@@ -984,7 +1023,6 @@
                 renderMessages(data.messages);
                 renderChatRooms();
                 
-                // Join room via WebSocket
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'join_room',
@@ -1004,12 +1042,18 @@
                     (msg.sender_id === parseInt(userId));
                 
                 const senderName = msg.anonymous_name || msg.sender_name || 'Unknown';
+                const canDelete = isOwn || currentChatRoom.room_type === 'anonymous';
                 
                 return `
-                    <div class="message ${isOwn ? 'own' : ''}">
+                    <div class="message ${isOwn ? 'own' : ''}" data-message-id="${msg.id}">
                         ${!isOwn ? `<div class="message-sender">${senderName}</div>` : ''}
                         <div class="message-bubble">
                             ${msg.content}
+                            ${canDelete ? `
+                                <div class="message-actions">
+                                    <button class="message-action-btn" onclick="showDeleteModal(${msg.id})">🗑️</button>
+                                </div>
+                            ` : ''}
                         </div>
                         <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
                     </div>
@@ -1026,12 +1070,18 @@
                 (data.sender_id === parseInt(userId));
             
             const senderName = data.anonymous_name || data.sender_name || 'Unknown';
+            const canDelete = isOwn || currentChatRoom.room_type === 'anonymous';
             
             const msgHtml = `
-                <div class="message ${isOwn ? 'own' : ''}">
+                <div class="message ${isOwn ? 'own' : ''}" data-message-id="${data.id}">
                     ${!isOwn ? `<div class="message-sender">${senderName}</div>` : ''}
                     <div class="message-bubble">
                         ${data.content}
+                        ${canDelete ? `
+                            <div class="message-actions">
+                                <button class="message-action-btn" onclick="showDeleteModal(${data.id})">🗑️</button>
+                            </div>
+                        ` : ''}
                     </div>
                     <div class="message-time">${new Date().toLocaleTimeString()}</div>
                 </div>
@@ -1040,6 +1090,54 @@
             container.innerHTML += msgHtml;
             container.scrollTop = container.scrollHeight;
         }
+
+        function removeMessageFromUI(messageId) {
+            const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
+            if (messageEl) {
+                messageEl.remove();
+            }
+        }
+
+        function showDeleteModal(messageId) {
+            messageToDelete = messageId;
+            document.getElementById('deleteConfirmModal').classList.add('active');
+        }
+
+        function closeDeleteModal() {
+            messageToDelete = null;
+            document.getElementById('deleteConfirmModal').classList.remove('active');
+        }
+
+        async function confirmDeleteMessage() {
+    if (!messageToDelete || !currentChatRoom) return;
+    
+    try {
+        const res = await fetch(`${API_URL}/messages/${messageToDelete}/`, {
+            method: 'DELETE',
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            removeMessageFromUI(messageToDelete);
+            closeDeleteModal();
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'delete_message',
+                    chat_room_id: currentChatRoom.id,
+                    message_id: messageToDelete
+                }));
+            }
+        } else {
+            alert('Failed to delete: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('Error deleting message:', err);
+        alert('Error deleting message: ' + err.message);
+    }
+}
 
         function sendMessage() {
             const input = document.getElementById('messageInput');
@@ -1053,16 +1151,14 @@
                 content: content
             };
             
-            // Add anonymous name if in anonymous mode
             if (isAnonymousMode || currentChatRoom.room_type === 'anonymous') {
                 message.anonymous_name = anonymousName || 'Anonymous';
             }
             
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify(message));
+                input.value = '';
             }
-            
-            input.value = '';
         }
 
         function handleTyping(e) {
@@ -1071,27 +1167,29 @@
                 return;
             }
             
-            if (!currentChatRoom || !ws || ws.readyState !== WebSocket.OPEN) return;
+            if (!currentChatRoom) return;
             
-            clearTimeout(typingTimeout);
-            
-            ws.send(JSON.stringify({
-                type: 'typing',
-                chat_room_id: currentChatRoom.id,
-                is_typing: true
-            }));
-            
-            typingTimeout = setTimeout(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'typing',
                     chat_room_id: currentChatRoom.id,
-                    is_typing: false
+                    is_typing: true
                 }));
-            }, 1000);
+                
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    ws.send(JSON.stringify({
+                        type: 'typing',
+                        chat_room_id: currentChatRoom.id,
+                        is_typing: false
+                    }));
+                }, 1000);
+            }
         }
 
         function showTypingIndicator(userName, isTyping) {
             const indicator = document.getElementById('typingIndicator');
+            
             if (isTyping) {
                 indicator.textContent = `${userName} is typing...`;
                 indicator.classList.remove('hidden');
@@ -1100,102 +1198,53 @@
             }
         }
 
-        function leaveChat() {
-            currentChatRoom = null;
-            document.getElementById('noChatSelected').classList.remove('hidden');
-            document.getElementById('chatContainer').classList.add('hidden');
-            renderChatRooms();
-        }
-
-        async function startPrivateChat(friendId) {
-            try {
-                const res = await fetch(`${API_URL}/chatrooms/create/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        room_type: 'private',
-                        other_user_id: friendId
-                    })
-                });
-                
-                const data = await res.json();
-                await loadChatRooms();
-                openChat(data.room_id);
-                switchTab('chats');
-            } catch (err) {
-                console.error('Error creating chat:', err);
-            }
-        }
-
-        // User Search
-        let searchTimeout = null;
-        async function searchUsers(query) {
-            clearTimeout(searchTimeout);
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.sidebar-content').forEach(content => content.classList.add('hidden'));
             
+            document.querySelector(`.tab:nth-child(${['chats','friends','requests'].indexOf(tabName)+1})`).classList.add('active');
+            document.getElementById(`${tabName}Tab`).classList.remove('hidden');
+        }
+
+        async function searchUsers(query) {
             if (!query.trim()) {
                 renderFriends();
                 return;
             }
             
-            searchTimeout = setTimeout(async () => {
-                try {
-                    const res = await fetch(`${API_URL}/users/search/?q=${query}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const data = await res.json();
-                    renderSearchResults(data.users);
-                } catch (err) {
-                    console.error('Error searching users:', err);
-                }
-            }, 300);
-        }
-
-        function renderSearchResults(users) {
-            const list = document.getElementById('friendsList');
-            if (users.length === 0) {
-                list.innerHTML = '<div class="empty-state"><p>No users found</p></div>';
-                return;
-            }
-            
-            list.innerHTML = users.map(user => {
-                let button = '';
-                if (user.friendship_status === 'friend') {
-                    button = '<button class="btn-small" disabled>Friends ✓</button>';
-                } else if (user.friendship_status === 'request_sent') {
-                    button = '<button class="btn-small" disabled>Request Sent</button>';
-                } else if (user.friendship_status === 'request_received') {
-                    button = '<button class="btn-small btn-accept" onclick="switchTab(\'requests\')">Respond</button>';
-                } else {
-                    button = `<button class="btn-small btn-add" onclick="sendFriendRequest(${user.id})">Add Friend</button>`;
-                }
+            try {
+                const res = await fetch(`${API_URL}/users/search/?q=${encodeURIComponent(query)}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
                 
-                return `
+                const list = document.getElementById('friendsList');
+                list.innerHTML = data.users.map(user => `
                     <div class="list-item">
                         <strong>${user.username}</strong>
                         <small>${user.email}</small>
-                        <div style="margin-top: 10px;">${button}</div>
+                        ${!friends.some(f => f.id === user.id) ? 
+                            `<button class="btn-small btn-add" onclick="sendFriendRequest(${user.id})" style="margin-top: 8px;">Add Friend</button>` : 
+                            '<small style="color: #4caf50; margin-top: 8px;">✓ Friend</small>'
+                        }
                     </div>
-                `;
-            }).join('');
+                `).join('');
+            } catch (err) {
+                console.error('Error searching users:', err);
+            }
         }
 
-        async function sendFriendRequest(receiverId) {
+        async function sendFriendRequest(userId) {
             try {
-                const res = await fetch(`${API_URL}/friends/requests/send/`, {
+                const res = await fetch(`${API_URL}/friends/request/`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ receiver_id: receiverId })
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ to_user_id: userId })
                 });
                 
                 if (res.ok) {
                     alert('Friend request sent!');
-                    searchUsers(document.getElementById('userSearch').value);
+                    loadFriendRequests();
                 }
             } catch (err) {
                 console.error('Error sending request:', err);
@@ -1204,29 +1253,24 @@
 
         async function respondRequest(requestId, action) {
             try {
-                const res = await fetch(`${API_URL}/friends/requests/${requestId}/respond/`, {
+                const res = await fetch(`${API_URL}/friends/respond/`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ action })
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ request_id: requestId, action })
                 });
                 
                 if (res.ok) {
                     loadFriendRequests();
                     loadFriends();
-                    loadChatRooms();
                 }
             } catch (err) {
                 console.error('Error responding to request:', err);
             }
         }
 
-        // Create Chat Modal
         function showCreateChatModal() {
             document.getElementById('createChatModal').classList.add('active');
-            populateFriendSelects();
+            handleChatTypeChange();
         }
 
         function closeCreateChatModal() {
@@ -1234,134 +1278,177 @@
         }
 
         function handleChatTypeChange() {
-            const chatType = document.getElementById('chatType').value;
-            
+            const type = document.getElementById('chatType').value;
             document.getElementById('privateOptions').classList.add('hidden');
             document.getElementById('groupOptions').classList.add('hidden');
             document.getElementById('anonymousOptions').classList.add('hidden');
             
-            if (chatType === 'private') {
-                document.getElementById('privateOptions').classList.remove('hidden');
-            } else if (chatType === 'group') {
-                document.getElementById('groupOptions').classList.remove('hidden');
-            } else if (chatType === 'anonymous') {
-                document.getElementById('anonymousOptions').classList.remove('hidden');
-            }
+            document.getElementById(`${type}Options`).classList.remove('hidden');
         }
 
         function populateFriendSelects() {
             const friendSelect = document.getElementById('friendSelect');
             const groupMembers = document.getElementById('groupMembers');
             
-            const options = friends.map(f => 
-                `<option value="${f.id}">${f.username}</option>`
-            ).join('');
-            
-            friendSelect.innerHTML = friends.length > 0 ? options : '<option>No friends yet</option>';
-            groupMembers.innerHTML = options;
+            friendSelect.innerHTML = friends.map(f => `<option value="${f.id}">${f.username}</option>`).join('');
+            groupMembers.innerHTML = friends.map(f => `<option value="${f.id}">${f.username}</option>`).join('');
         }
 
-        async function createChat() {
-            const chatType = document.getElementById('chatType').value;
-            
-            try {
-                let body = { room_type: chatType };
-                
-                if (chatType === 'private') {
-                    const friendId = document.getElementById('friendSelect').value;
-                    if (!friendId) {
-                        alert('Please select a friend');
-                        return;
-                    }
-                    body.other_user_id = parseInt(friendId);
-                    
-                } else if (chatType === 'group') {
-                    const groupName = document.getElementById('groupName').value;
-                    const selectedOptions = Array.from(document.getElementById('groupMembers').selectedOptions);
-                    
-                    if (!groupName) {
-                        alert('Please enter a group name');
-                        return;
-                    }
-                    if (selectedOptions.length === 0) {
-                        alert('Please select at least one friend');
-                        return;
-                    }
-                    
-                    body.name = groupName;
-                    body.participant_ids = selectedOptions.map(opt => parseInt(opt.value));
-                    
-                } else if (chatType === 'anonymous') {
-                    const anonName = document.getElementById('anonymousName').value;
-                    if (!anonName) {
-                        alert('Please enter an anonymous name');
-                        return;
-                    }
-                    body.anonymous_name = anonName;
-                    localStorage.setItem('anonymousName', anonName);
-                    anonymousName = anonName;
-                }
-                
-                const res = await fetch(`${API_URL}/chatrooms/create/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': token ? `Bearer ${token}` : undefined
-                    },
-                    body: JSON.stringify(body)
-                });
-                
-                const data = await res.json();
-                
-                if (res.ok) {
-                    closeCreateChatModal();
-                    await loadChatRooms();
-                    openChat(data.room_id);
-                    switchTab('chats');
-                } else {
-                    alert(data.error || 'Failed to create chat');
-                }
-            } catch (err) {
-                console.error('Error creating chat:', err);
-                alert('Error creating chat');
+async function createChat() {
+    const chatType = document.getElementById('chatType').value;
+    
+    try {
+        let body = { room_type: chatType };
+        
+        if (chatType === 'private') {
+            const friendId = document.getElementById('friendSelect').value;
+            if (!friendId) {
+                alert('Please select a friend');
+                return;
             }
-        }
-
-        // Tab Switching
-        function switchTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.sidebar-content').forEach(c => c.classList.add('hidden'));
+            body.other_user_id = parseInt(friendId);
             
-            if (tab === 'chats') {
-                document.querySelectorAll('.tab')[0].classList.add('active');
-                document.getElementById('chatsTab').classList.remove('hidden');
-            } else if (tab === 'friends') {
-                document.querySelectorAll('.tab')[1].classList.add('active');
-                document.getElementById('friendsTab').classList.remove('hidden');
-            } else if (tab === 'requests') {
-                document.querySelectorAll('.tab')[2].classList.add('active');
-                document.getElementById('requestsTab').classList.remove('hidden');
+        } else if (chatType === 'group') {
+            const groupName = document.getElementById('groupName').value;
+            const selectedOptions = Array.from(document.getElementById('groupMembers').selectedOptions);
+            
+            if (!groupName) {
+                alert('Please enter a group name');
+                return;
+            }
+            if (selectedOptions.length === 0) {
+                alert('Please select at least one friend');
+                return;
+            }
+            
+            body.name = groupName;
+            body.participant_ids = selectedOptions.map(opt => parseInt(opt.value));
+            
+        } else if (chatType === 'anonymous') {
+            const anonName = document.getElementById('anonymousName').value;
+            if (!anonName) {
+                alert('Please enter an anonymous name');
+                return;
+            }
+            body.anonymous_name = anonName;
+            localStorage.setItem('anonymousName', anonName);
+            anonymousName = anonName;
+        }
+        
+        console.log('Sending:', body); // Debug log
+        
+        const res = await fetch(`${API_URL}/chatrooms/create/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token ? `Bearer ${token}` : undefined
+            },
+            body: JSON.stringify(body)
+        });
+        
+        const responseText = await res.text();
+        console.log('Response:', responseText); // Debug log
+        
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch {
+            throw new Error('Server returned invalid JSON: ' + responseText);
+        }
+        
+        if (res.ok) {
+            closeCreateChatModal();
+            await loadChatRooms();
+            openChat(data.room_id);
+            switchTab('chats');
+        } else {
+            alert(data.error || 'Failed to create chat');
+        }
+    } catch (err) {
+        console.error('Error creating chat:', err);
+        alert('Error creating chat: ' + err.message);
+    }
+}
+
+        function startPrivateChat(friendId) {
+            const existingRoom = chatRooms.find(room => 
+                room.room_type === 'private' && 
+                room.participants && 
+                room.participants.some(p => p.id === friendId)
+            );
+            
+            if (existingRoom) {
+                openChat(existingRoom.id);
+            } else {
+                document.getElementById('chatType').value = 'private';
+                document.getElementById('friendSelect').value = friendId;
+                showCreateChatModal();
             }
         }
 
         function filterChats(query) {
-            const items = document.querySelectorAll('#chatsList .list-item');
-            items.forEach(item => {
-                const text = item.textContent.toLowerCase();
-                item.style.display = text.includes(query.toLowerCase()) ? 'block' : 'none';
-            });
+            const list = document.getElementById('chatsList');
+            const filtered = chatRooms.filter(room => 
+                room.name?.toLowerCase().includes(query.toLowerCase()) ||
+                room.id.toString().includes(query)
+            );
+            
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="empty-state"><p>No matching chats</p></div>';
+                return;
+            }
+            
+            list.innerHTML = filtered.map(room => {
+                let badge = '';
+                if (room.room_type === 'private') badge = '<span class="room-type-badge room-type-private">Private</span>';
+                else if (room.room_type === 'group') badge = '<span class="room-type-badge room-type-group">Group</span>';
+                else if (room.room_type === 'anonymous') badge = '<span class="room-type-badge room-type-anonymous">Anonymous</span>';
+                
+                return `
+                    <div class="list-item ${currentChatRoom?.id === room.id ? 'active' : ''}" onclick="openChat(${room.id})">
+                        <strong>${room.name || 'Chat #' + room.id}${badge}</strong>
+                        <small>${room.participant_count || 0} participants</small>
+                    </div>
+                `;
+            }).join('');
         }
 
         function updateChatRoomPreview(roomId, lastMessage) {
-            loadChatRooms();
+            const roomElement = document.querySelector(`[onclick="openChat(${roomId})"]`);
+            if (roomElement) {
+                const small = roomElement.querySelector('small');
+                if (small) {
+                    small.textContent = lastMessage;
+                }
+            }
         }
 
-        // Close modal on outside click
-        document.getElementById('createChatModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeCreateChatModal();
+        async function leaveChat() {
+    if (!currentChatRoom) return;
+    
+    if (confirm('Are you sure you want to leave this chat?')) {
+        try {
+            const res = await fetch(`${API_URL}/chatrooms/${currentChatRoom.id}/leave/`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                currentChatRoom = null;
+                document.getElementById('chatContainer').classList.add('hidden');
+                document.getElementById('noChatSelected').classList.remove('hidden');
+                loadChatRooms();
+            } else {
+                alert('Error: ' + data.error);
             }
-        });
+        } catch (err) {
+            console.error('Error leaving chat:', err);
+            alert('Error leaving chat');
+        }
+    }
+}
     </script>
 </body>
 </html>

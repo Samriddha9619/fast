@@ -9,21 +9,18 @@ from django.conf import settings
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        # Get token from query string
         self.token = self.scope['query_string'].decode().split('token=')[-1] if b'token=' in self.scope['query_string'] else None
         self.user = await self.get_user_from_token(self.token)
         self.room_groups = set()
         
         await self.accept()
         
-        # Send connection confirmation
         await self.send(text_data=json.dumps({
             'type': 'connection_established',
             'message': 'Connected to WebSocket'
         }))
 
     async def disconnect(self, close_code):
-        # Leave all room groups
         for room_group_name in self.room_groups:
             await self.channel_layer.group_discard(
                 room_group_name,
@@ -41,6 +38,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.send_chat_message(data)
             elif message_type == 'typing':
                 await self.handle_typing(data)
+            elif message_type == 'delete_message':
+                await self.delete_chat_message(data)
 
         except Exception as e:
             await self.send(text_data=json.dumps({
@@ -57,7 +56,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         room_group_name = f'chat_{room_id}'
         
-        # Join room group
         await self.channel_layer.group_add(
             room_group_name,
             self.channel_name
@@ -65,10 +63,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         
         self.room_groups.add(room_group_name)
         
-        # Get room info
         room_info = await self.get_room_info(room_id)
         
-        # Notify others in the room (except for anonymous rooms)
         if room_info and room_info['room_type'] != 'anonymous':
             await self.channel_layer.group_send(
                 room_group_name,
@@ -88,7 +84,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not room_id or not content:
             return
 
-        # Save message to database
         message_data = await self.save_message(room_id, content, anonymous_name)
         
         if not message_data:
@@ -96,7 +91,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         room_group_name = f'chat_{room_id}'
         
-        # Send message to room group
         await self.channel_layer.group_send(
             room_group_name,
             {
@@ -116,7 +110,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         room_group_name = f'chat_{room_id}'
         user_name = self.user.username if self.user else 'Someone'
         
-        # Send typing indicator to room group (but not to self)
         await self.channel_layer.group_send(
             room_group_name,
             {
@@ -128,7 +121,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
 
-    # WebSocket event handlers
     async def new_message(self, event):
         """Send new message to WebSocket"""
         message = event['message']
@@ -145,7 +137,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def user_typing(self, event):
         """Send typing indicator to WebSocket (but not to sender)"""
-        # Don't send typing indicator back to the person typing
         if event.get('sender_channel') != self.channel_name:
             await self.send(text_data=json.dumps({
                 'type': 'user_typing',
@@ -162,7 +153,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'chat_room_id': event['chat_room_id']
         }))
 
-    # Database operations
     @database_sync_to_async
     def get_user_from_token(self, token):
         """Get user from JWT token"""
@@ -195,7 +185,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         try:
             room = ChatRoom.objects.get(id=room_id)
             
-            # For anonymous rooms or if anonymous_name is provided
             if room.room_type == 'anonymous' or anonymous_name:
                 message = Message.objects.create(
                     chat_room=room,
@@ -204,11 +193,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     sender=self.user if self.user else None
                 )
             else:
-                # Regular authenticated message
                 if not self.user:
                     return None
                 
-                # Verify user is participant
                 if self.user not in room.participants.all():
                     return None
                 
