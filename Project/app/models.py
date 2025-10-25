@@ -12,6 +12,7 @@ class ChatRoom(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     participants = models.ManyToManyField(User, related_name='chat_rooms', blank=True)
     is_active = models.BooleanField(default=True)
+    description = models.TextField(blank=True)
 
     def __str__(self):
         if self.room_type == 'anonymous':
