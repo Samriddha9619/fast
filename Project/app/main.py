@@ -4,6 +4,7 @@ import json
 import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from typing import Dict, Optional
+from asgiref.sync import sync_to_async
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'chat_app.settings')
 django.setup()
@@ -45,7 +46,7 @@ class ConnectionManager:
 
     async def broadcast_to_room(self, chat_room_id: int, message: dict, exclude_connection_id: str = None):
         try:
-            chatroom = ChatRoom.objects.get(id=chat_room_id)
+            chatroom = await sync_to_async(ChatRoom.objects.get)(id=chat_room_id)
             sent_count = 0
 
             if chatroom.room_type == 'anonymous':
@@ -55,7 +56,7 @@ class ConnectionManager:
                     if await self.send_to_connection(conn_id, message):
                         sent_count += 1
             else:
-                participants = chatroom.participants.all()
+                participants = await sync_to_async(list)(chatroom.participants.all())
                 for user in participants:
                     if user.id in self.user_to_connection:
                         conn_id = self.user_to_connection[user.id]
@@ -91,13 +92,13 @@ async def handle_send_message(websocket: WebSocket, connection_id: str, user_id:
         return
 
     try:
-        chatroom = ChatRoom.objects.get(id=chat_room_id)
+        chatroom = await sync_to_async(ChatRoom.objects.get)(id=chat_room_id)
 
         if chatroom.room_type == 'anonymous':
             if not anonymous_name:
                 anonymous_name = f"Anonymous_{connection_id[:8]}"
             
-            message = Message.objects.create(
+            message = await sync_to_async(Message.objects.create)(
                 content=content,
                 anonymous_name=anonymous_name,
                 chat_room=chatroom
@@ -117,13 +118,15 @@ async def handle_send_message(websocket: WebSocket, connection_id: str, user_id:
                 await send_error(websocket, "Authentication required for this room")
                 return
 
-            user = User.objects.get(id=user_id)
+            user = await sync_to_async(User.objects.get)(id=user_id)
             
-            if user not in chatroom.participants.all():
+            # Check if user is participant
+            participants = await sync_to_async(list)(chatroom.participants.all())
+            if user not in participants:
                 await send_error(websocket, "You're not a participant")
                 return
 
-            message = Message.objects.create(
+            message = await sync_to_async(Message.objects.create)(
                 content=content,
                 sender=user,
                 chat_room=chatroom
@@ -161,7 +164,7 @@ async def handle_typing_indicator(websocket: WebSocket, connection_id: str, user
         return
 
     try:
-        chatroom = ChatRoom.objects.get(id=chat_room_id)
+        chatroom = await sync_to_async(ChatRoom.objects.get)(id=chat_room_id)
 
         if chatroom.room_type == 'anonymous':
             if not anonymous_name:
@@ -178,9 +181,11 @@ async def handle_typing_indicator(websocket: WebSocket, connection_id: str, user
             if not user_id:
                 return
 
-            user = User.objects.get(id=user_id)
+            user = await sync_to_async(User.objects.get)(id=user_id)
             
-            if user not in chatroom.participants.all():
+            # Check if user is participant
+            participants = await sync_to_async(list)(chatroom.participants.all())
+            if user not in participants:
                 return
 
             typing_data = {
@@ -196,6 +201,8 @@ async def handle_typing_indicator(websocket: WebSocket, connection_id: str, user
 
     except (ChatRoom.DoesNotExist, User.DoesNotExist):
         pass
+    except Exception as e:
+        print(f"Error in typing indicator: {e}")
 
 
 async def handle_join_room(websocket: WebSocket, connection_id: str, user_id: Optional[int], data: dict):
@@ -206,7 +213,7 @@ async def handle_join_room(websocket: WebSocket, connection_id: str, user_id: Op
         return
 
     try:
-        chatroom = ChatRoom.objects.get(id=chat_room_id)
+        chatroom = await sync_to_async(ChatRoom.objects.get)(id=chat_room_id)
 
         if chatroom.room_type == 'anonymous':
             if not anonymous_name:
@@ -222,9 +229,11 @@ async def handle_join_room(websocket: WebSocket, connection_id: str, user_id: Op
             if not user_id:
                 return
 
-            user = User.objects.get(id=user_id)
+            user = await sync_to_async(User.objects.get)(id=user_id)
             
-            if user not in chatroom.participants.all():
+            # Check if user is participant
+            participants = await sync_to_async(list)(chatroom.participants.all())
+            if user not in participants:
                 return
 
             join_data = {
@@ -239,6 +248,8 @@ async def handle_join_room(websocket: WebSocket, connection_id: str, user_id: Op
 
     except (ChatRoom.DoesNotExist, User.DoesNotExist):
         pass
+    except Exception as e:
+        print(f"Error in join room: {e}")
 
 
 async def handle_message(websocket: WebSocket, connection_id: str, user_id: Optional[int], raw_data: str):
@@ -272,7 +283,6 @@ async def websocket_endpoint(
     user_id = None
 
     if not anonymous and token:
-        from django.contrib.auth import get_user_model
         import jwt
         from django.conf import settings
 
