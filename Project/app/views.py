@@ -284,19 +284,17 @@ def search_users(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@csrf_exempt
-@require_http_methods(["POST"])
 def create_chatroom(request):
     try:
         data = json.loads(request.body)
         
         room_type = data.get('room_type', 'private')
         name = data.get('name', '')
-        description = data.get('description', '')
+        anonymous_name = data.get('anonymous_name', '')
 
         if room_type == 'anonymous':
             if not name:
-                name = f"Anonymous Chat {ChatRoom.objects.filter(room_type='anonymous').count() + 1}"
+                name = f"Anonymous Room {ChatRoom.objects.filter(room_type='anonymous').count() + 1}"
             
             chatroom = ChatRoom.objects.create(
                 name=name,
@@ -359,13 +357,10 @@ def create_chatroom(request):
                 except User.DoesNotExist:
                     continue
             
-            participant_names = [p.username for p in chatroom.participants.all()]
-            
             return JsonResponse({
                 'room_id': chatroom.id,
                 'room_type': chatroom.room_type,
                 'name': chatroom.name,
-                'participants': participant_names,
                 'participant_count': chatroom.participants.count()
             }, status=201)
         else:
@@ -375,6 +370,68 @@ def create_chatroom(request):
         return JsonResponse({'error': 'User not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@require_http_methods(["GET"])
+def get_anonymous_rooms(request):
+    try:
+        rooms = ChatRoom.objects.filter(
+            room_type='anonymous',
+            is_active=True
+        ).order_by('-created_at')
+        
+        rooms_data = []
+        for room in rooms:
+            recent_messages = Message.objects.filter(
+                chat_room=room
+            ).order_by('-timestamp')[:1]
+            
+            last_activity = room.created_at
+            if recent_messages:
+                last_activity = recent_messages[0].timestamp
+            
+            active_participants = Message.objects.filter(
+                chat_room=room,
+                timestamp__gte=datetime.now() - timedelta(hours=1)
+            ).values('anonymous_name', 'sender').distinct().count()
+            
+            total_messages = Message.objects.filter(chat_room=room).count()
+            
+            rooms_data.append({
+                'id': room.id,
+                'name': room.name,
+                'participant_count': active_participants,
+                'message_count': total_messages,
+                'last_activity': last_activity.isoformat(),
+                'is_active': active_participants > 0
+            })
+        
+        return JsonResponse({'rooms': rooms_data})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def join_anonymous_room(request, room_id):
+    try:
+        chatroom = ChatRoom.objects.get(id=room_id, room_type='anonymous')
+        
+        data = json.loads(request.body) if request.body else {}
+        anonymous_name = data.get('anonymous_name', 'Anonymous')
+        
+        return JsonResponse({
+            'message': 'Joined anonymous chat room',
+            'room_id': chatroom.id,
+            'room_name': chatroom.name,
+            'room_type': 'anonymous',
+            'anonymous_name': anonymous_name
+        })
+    
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Anonymous chat room not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 @require_http_methods(["GET"])
 def get_messages(request, room_id):
     try:
@@ -444,73 +501,6 @@ def get_chatrooms(request):
         })
 
     return JsonResponse({'chatrooms': rooms_data})
-
-
-@require_http_methods(["GET"])
-def get_anonymous_rooms(request):
-    """List all active anonymous chat rooms with real participant counts"""
-    try:
-        rooms = ChatRoom.objects.filter(
-            room_type='anonymous',
-            is_active=True
-        ).order_by('-created_at')
-        
-        rooms_data = []
-        for room in rooms:
-            one_hour_ago = datetime.now() - timedelta(hours=1)
-            recent_messages = Message.objects.filter(
-                chat_room=room,
-                timestamp__gte=one_hour_ago
-            )
-            
-            anonymous_participants = set(
-                msg.anonymous_name for msg in recent_messages 
-                if msg.anonymous_name
-            )
-            auth_participants = set(
-                msg.sender_id for msg in recent_messages 
-                if msg.sender_id
-            )
-            
-            participant_count = len(anonymous_participants) + len(auth_participants)
-            total_messages = Message.objects.filter(chat_room=room).count()
-            
-            rooms_data.append({
-                'id': room.id,
-                'name': room.name or f"Room {room.id}",
-                'description': '',  # Add description field to model if needed
-                'participant_count': participant_count,
-                'message_count': total_messages,
-                'is_active': participant_count > 0,  # Active if someone messaged recently
-                'created_at': room.created_at.isoformat()
-            })
-        
-        rooms_data.sort(key=lambda x: (x['participant_count'], x['created_at']), reverse=True)
-        
-        return JsonResponse({'rooms': rooms_data})
-    
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def join_anonymous_room(request, room_id):
-    """Join an anonymous chat room - no auth required"""
-    try:
-        chatroom = ChatRoom.objects.get(id=room_id, room_type='anonymous')
-        
-        return JsonResponse({
-            'message': 'Joined anonymous chat room',
-            'room_id': chatroom.id,
-            'room_name': chatroom.name,
-            'room_type': 'anonymous'
-        })
-    
-    except ChatRoom.DoesNotExist:
-        return JsonResponse({'error': 'Anonymous chat room not found'}, status=404)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt

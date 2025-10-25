@@ -17,11 +17,10 @@ urlpatterns = [
     path('chatrooms/create/', views.create_chatroom, name='create_chatroom'),
     path('chatrooms/<int:room_id>/messages/', views.get_messages, name='get_messages'),
     path('chatrooms/<int:room_id>/join/', views.join_chatroom, name='join_chatroom'),
+    path('chatrooms/<int:room_id>/leave/', views.leave_chatroom, name='leave_chatroom'),
     
-    path('messages/<int:message_id>/', views.delete_message),
-
-    path('chatrooms/<int:room_id>/leave/', views.leave_chatroom),
-    
-    path('chatrooms/anonymous/<int:room_id>/join/', views.join_anonymous_room, name='join_anonymous_room'),
     path('chatrooms/anonymous/', views.get_anonymous_rooms, name='get_anonymous_rooms'),
+    path('chatrooms/anonymous/<int:room_id>/join/', views.join_anonymous_room, name='join_anonymous_room'),
+    
+    path('messages/<int:message_id>/', views.delete_message, name='delete_message'),
 ]
