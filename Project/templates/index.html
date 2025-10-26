@@ -28,6 +28,8 @@
             width: 95%;
             max-width: 1200px;
             height: 90vh;
+            display: flex;
+            flex-direction: column;
         }
 
         .auth-container {
@@ -111,6 +113,8 @@
         .chat-layout {
             display: flex;
             height: 100%;
+            flex: 1;
+            overflow: column ;
         }
 
         .sidebar {
@@ -213,6 +217,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         .chat-header {
@@ -228,20 +233,55 @@
             color: #333;
         }
 
-        .messages {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            background: #f8f9fa;
-        }
+       .messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    max-height: calc(90vh - 200px); /* Adjust based on your layout */
+    min-height: 0;
+}
+.messages::-webkit-scrollbar {
+    width: 8px;
+}
 
+.messages::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.messages::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+.messages::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+.message.own.anonymous .message-bubble {
+    background: linear-gradient(135deg, #f57c00 0%, #ff9800 100%) !important;
+    color: white;
+    box-shadow: 0 2px 8px rgba(245, 124, 0, 0.3);
+}
+
+.message.own.anonymous .message-sender {
+    color: #f57c00 !important;
+    font-weight: 700;
+}
+
+.message.own.anonymous .message-sender::after {
+    content: " (You)";
+    font-size: 10px;
+    opacity: 0.8;
+}
         .message {
-            max-width: 60%;
-            margin-bottom: 15px;
-            animation: fadeIn 0.3s;
-            position: relative;
-        }
-
+    max-width: 60%;
+    margin-bottom: 15px;
+    animation: fadeIn 0.3s;
+    position: relative;
+    clear: both;
+    display: block;
+}
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -249,8 +289,14 @@
 
         .message.own {
             margin-left: auto;
+            float: right;
         }
 
+        
+.message:not(.own) {
+    margin-right: auto;
+    float: left;
+}
         .message-bubble {
             padding: 12px 16px;
             border-radius: 18px;
@@ -287,12 +333,24 @@
             margin-top: 4px;
         }
 
+        #chatContainer {
+    display: none;
+}
+
+#chatContainer:not(.hidden) {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+}
+
         .chat-input {
             padding: 20px;
             background: white;
             border-top: 1px solid #e0e0e0;
             display: flex;
             gap: 10px;
+            flex-shrink: 0;
+            min-height: 80px;
         }
 
         .chat-input input {
@@ -804,8 +862,8 @@
     </div>
 
     <script>
-        const API_URL = 'http://localhost:8000/api';
-        const WS_URL = 'ws://localhost:8001/ws';
+       const API_URL = 'http://127.0.0.1:8000/api';
+       const WS_URL = 'ws://127.0.0.1:8000/ws/';
         
         let token = localStorage.getItem('token');
         let userId = localStorage.getItem('userId');
@@ -975,27 +1033,43 @@
             await openChat(roomId);
         }
 
-        function initializeAnonymousWebSocket() {
-            ws = new WebSocket(`${WS_URL}?anonymous=true`);
-            
-            ws.onopen = () => {
-                console.log('Anonymous WebSocket connected');
-            };
-            
-            ws.onmessage = (event) => {
+       function initializeAnonymousWebSocket() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log('✅ Anonymous WebSocket already connected');
+        return;
+    }
+    
+    try {
+        ws = new WebSocket(`${WS_URL}?anonymous=true&name=${encodeURIComponent(anonymousName || 'Anonymous')}`);
+        
+        ws.onopen = () => {
+            console.log('✅ Anonymous WebSocket connected');
+        };
+        
+        ws.onmessage = (event) => {
+            try {
                 const data = JSON.parse(event.data);
                 handleWebSocketMessage(data);
-            };
-            
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
-            
-            ws.onclose = () => {
-                console.log('WebSocket closed, reconnecting...');
-                setTimeout(initializeAnonymousWebSocket, 3000);
-            };
-        }
+            } catch (err) {
+                console.error('Error parsing WebSocket message:', err);
+            }
+        };
+        
+        ws.onerror = (error) => {
+            console.error('❌ Anonymous WebSocket error:', error);
+            console.log('Check if WebSocket server is running on port 8001');
+        };
+        
+        ws.onclose = () => {
+            console.log('🔄 Anonymous WebSocket closed, reconnecting...');
+            ws = null;
+            setTimeout(initializeAnonymousWebSocket, 3000);
+        };
+    } catch (err) {
+        console.error('Failed to create Anonymous WebSocket:', err);
+        setTimeout(initializeAnonymousWebSocket, 3000);
+    }
+}
 
         function showCreateAnonRoomModal() {
             const nickname = document.getElementById('anonNickname').value.trim();
@@ -1094,20 +1168,45 @@
             setTimeout(() => el.classList.add('hidden'), 5000);
         }
 
-        function initializeWebSocket() {
-            const wsUrl = token ? `${WS_URL}?token=${token}` : WS_URL;
-            ws = new WebSocket(wsUrl);
-            
-            ws.onopen = () => console.log('WebSocket connected');
-            
-            ws.onmessage = (event) => {
+       function initializeWebSocket() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log('✅ WebSocket already connected');
+        return;
+    }
+    
+    const wsUrl = token ? `${WS_URL}?token=${token}` : WS_URL;
+    
+    try {
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+            console.log('✅ WebSocket connected successfully');
+        };
+        
+        ws.onmessage = (event) => {
+            try {
                 const data = JSON.parse(event.data);
                 handleWebSocketMessage(data);
-            };
-            
-            ws.onerror = () => console.error('WebSocket error');
-            ws.onclose = () => setTimeout(initializeWebSocket, 3000);
-        }
+            } catch (err) {
+                console.error('Error parsing WebSocket message:', err);
+            }
+        };
+        
+        ws.onerror = (error) => {
+            console.error('❌ WebSocket error:', error);
+            console.log('Check if WebSocket server is running on port 8001');
+        };
+        
+        ws.onclose = () => {
+            console.log('🔄 WebSocket closed, reconnecting in 3s...');
+            ws = null;
+            setTimeout(initializeWebSocket, 3000);
+        };
+    } catch (err) {
+        console.error('Failed to create WebSocket:', err);
+        setTimeout(initializeWebSocket, 3000);
+    }
+}
 
         function handleWebSocketMessage(data) {
             if (data.type === 'new_message') {
@@ -1243,104 +1342,132 @@
                 `).join('');
         }
 
-        async function openChat(roomId) {
-            try {
-                const res = await fetch(`${API_URL}/chatrooms/${roomId}/messages/`, {
-                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-                });
-                const data = await res.json();
-                
-                currentChatRoom = chatRooms.find(r => r.id === roomId) || { id: roomId };
-                
-                document.getElementById('noChatSelected').classList.add('hidden');
-                document.getElementById('chatContainer').classList.remove('hidden');
-                document.getElementById('chatTitle').textContent = currentChatRoom.name || `Chat #${roomId}`;
-                
-                const anonIndicator = document.getElementById('anonymousIndicator');
-                if (currentChatRoom.room_type === 'anonymous') {
-                    anonIndicator.textContent = `🎭 Anonymous Chat - You appear as "${anonymousName || 'Anonymous'}"`;
-                    anonIndicator.classList.remove('hidden');
-                } else {
-                    anonIndicator.classList.add('hidden');
-                }
-                
-                let subtitle = '';
-                if (currentChatRoom.room_type === 'private') subtitle = 'Private Chat';
-                else if (currentChatRoom.room_type === 'group') subtitle = `Group Chat • ${currentChatRoom.participant_count || 0} members`;
-                else if (currentChatRoom.room_type === 'anonymous') subtitle = 'Anonymous Chat';
-                document.getElementById('chatSubtitle').textContent = subtitle;
-                
-                renderMessages(data.messages);
-                renderChatRooms();
-                
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        type: 'join_room',
-                        chat_room_id: roomId
-                    }));
-                }
-            } catch (err) {
-                console.error('Error opening chat:', err);
+async function openChat(roomId) {
+    try {
+        const res = await fetch(`${API_URL}/chatrooms/${roomId}/messages/`, {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        
+        if (!res.ok) {
+            throw new Error('Failed to load chat');
+        }
+        
+        const data = await res.json();
+        
+        // Find or create room object
+        currentChatRoom = chatRooms.find(r => r.id === roomId) || { 
+            id: roomId, 
+            room_type: isAnonymousMode ? 'anonymous' : 'private',
+            name: `Chat #${roomId}`
+        };
+        
+        // Show chat container properly
+        document.getElementById('noChatSelected').style.display = 'none';
+        const chatContainer = document.getElementById('chatContainer');
+        chatContainer.classList.remove('hidden');
+        chatContainer.style.display = 'flex';
+        
+        document.getElementById('chatTitle').textContent = currentChatRoom.name || `Chat #${roomId}`;
+        
+        const anonIndicator = document.getElementById('anonymousIndicator');
+        if (currentChatRoom.room_type === 'anonymous' || isAnonymousMode) {
+            anonIndicator.textContent = `🎭 Anonymous Chat - You appear as "${anonymousName || 'Anonymous'}"`;
+            anonIndicator.classList.remove('hidden');
+        } else {
+            anonIndicator.classList.add('hidden');
+        }
+        
+        let subtitle = '';
+        if (currentChatRoom.room_type === 'private') subtitle = 'Private Chat';
+        else if (currentChatRoom.room_type === 'group') subtitle = `Group Chat • ${currentChatRoom.participant_count || 0} members`;
+        else if (currentChatRoom.room_type === 'anonymous') subtitle = 'Anonymous Chat';
+        document.getElementById('chatSubtitle').textContent = subtitle;
+        
+        renderMessages(data.messages || []);
+        renderChatRooms();
+        
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'join_room',
+                chat_room_id: roomId
+            }));
+        } else {
+            console.warn('WebSocket not connected, attempting to reconnect...');
+            if (isAnonymousMode) {
+                initializeAnonymousWebSocket();
+            } else {
+                initializeWebSocket();
             }
         }
+    } catch (err) {
+        console.error('Error opening chat:', err);
+        alert('Failed to load chat: ' + err.message);
+    }
+}
 
-        function renderMessages(messages) {
-            const container = document.getElementById('messages');
-            container.innerHTML = messages.map(msg => {
-                const isOwn = isAnonymousMode ? 
-                    (msg.anonymous_name === anonymousName) : 
-                    (msg.sender_id === parseInt(userId));
-                
-                const senderName = msg.anonymous_name || msg.sender_name || 'Unknown';
-                const canDelete = isOwn || currentChatRoom.room_type === 'anonymous';
-                
-                return `
-                    <div class="message ${isOwn ? 'own' : ''}" data-message-id="${msg.id}">
-                        ${!isOwn ? `<div class="message-sender">${senderName}</div>` : ''}
-                        <div class="message-bubble">
-                            ${msg.content}
-                            ${canDelete ? `
-                                <div class="message-actions">
-                                    <button class="message-action-btn" onclick="showDeleteModal(${msg.id})">🗑️</button>
-                                </div>
-                            ` : ''}
+     function renderMessages(messages) {
+    const container = document.getElementById('messages');
+    container.innerHTML = messages.map(msg => {
+        const isOwn = isAnonymousMode ? 
+            (msg.anonymous_name === anonymousName) : 
+            (msg.sender_id === parseInt(userId));
+        
+        const senderName = msg.anonymous_name || msg.sender_name || 'Unknown';
+        const canDelete = isOwn || currentChatRoom.room_type === 'anonymous';
+        
+        // Add 'anonymous' class if in anonymous mode
+        const anonymousClass = (isAnonymousMode || currentChatRoom.room_type === 'anonymous') ? 'anonymous' : '';
+        
+        return `
+            <div class="message ${isOwn ? 'own' : ''} ${anonymousClass}" data-message-id="${msg.id}">
+                <div class="message-sender">${senderName}</div>
+                <div class="message-bubble">
+                    ${msg.content}
+                    ${canDelete ? `
+                        <div class="message-actions">
+                            <button class="message-action-btn" onclick="showDeleteModal(${msg.id})">🗑️</button>
                         </div>
-                        <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
-                    </div>
-                `;
-            }).join('');
-            
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function addMessageToUI(data) {
-            const container = document.getElementById('messages');
-            const isOwn = isAnonymousMode ? 
-                (data.anonymous_name === anonymousName) : 
-                (data.sender_id === parseInt(userId));
-            
-            const senderName = data.anonymous_name || data.sender_name || 'Unknown';
-            const canDelete = isOwn || currentChatRoom.room_type === 'anonymous';
-            
-            const msgHtml = `
-                <div class="message ${isOwn ? 'own' : ''}" data-message-id="${data.id}">
-                    ${!isOwn ? `<div class="message-sender">${senderName}</div>` : ''}
-                    <div class="message-bubble">
-                        ${data.content}
-                        ${canDelete ? `
-                            <div class="message-actions">
-                                <button class="message-action-btn" onclick="showDeleteModal(${data.id})">🗑️</button>
-                            </div>
-                        ` : ''}
-                    </div>
-                    <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                    ` : ''}
                 </div>
-            `;
-            
-            container.innerHTML += msgHtml;
-            container.scrollTop = container.scrollHeight;
-        }
-
+                <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+            </div>
+        `;
+    }).join('');
+    
+    // Auto-scroll to bottom
+    container.scrollTop = container.scrollHeight;
+}
+function addMessageToUI(data) {
+    const container = document.getElementById('messages');
+    const isOwn = isAnonymousMode ? 
+        (data.anonymous_name === anonymousName) : 
+        (data.sender_id === parseInt(userId));
+    
+    const senderName = data.anonymous_name || data.sender_name || 'Unknown';
+    const canDelete = isOwn || currentChatRoom?.room_type === 'anonymous';
+    
+    // Add 'anonymous' class if in anonymous mode
+    const anonymousClass = (isAnonymousMode || currentChatRoom?.room_type === 'anonymous') ? 'anonymous' : '';
+    
+    const msgHtml = `
+        <div class="message ${isOwn ? 'own' : ''} ${anonymousClass}" data-message-id="${data.id}">
+            <div class="message-sender">${senderName}</div>
+            <div class="message-bubble">
+                ${data.content}
+                ${canDelete ? `
+                    <div class="message-actions">
+                        <button class="message-action-btn" onclick="showDeleteModal(${data.id})">🗑️</button>
+                    </div>
+                ` : ''}
+            </div>
+            <div class="message-time">${new Date().toLocaleTimeString()}</div>
+        </div>
+    `;
+    
+    container.innerHTML += msgHtml;
+   
+    container.scrollTop = container.scrollHeight;
+}
         function removeMessageFromUI(messageId) {
             const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
             if (messageEl) {

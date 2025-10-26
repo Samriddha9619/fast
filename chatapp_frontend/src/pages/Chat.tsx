@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { chatAPI, authAPI, type ChatRoom, type Message, type User } from '../services/api';
 import { getToken } from '../utils/auth';
 import ChatRoomComponent from '../components/ChatRoom';
@@ -7,6 +7,7 @@ import ChatMessage from '../components/ChatMessage';
 import WebSocketService from '../services/websocket';
 
 const Chat: React.FC = () => {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
@@ -25,7 +26,6 @@ const Chat: React.FC = () => {
   useEffect(() => {
     loadInitialData();
     
-    // Check if this is an anonymous chat
     const pathname = window.location.pathname;
     if (pathname.includes('/anonymous/') || searchParams.get('name')) {
       setIsAnonymous(true);
@@ -45,7 +45,6 @@ const Chat: React.FC = () => {
   }, [selectedRoom]);
 
   useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
     scrollToBottom();
   }, [messages]);
 
@@ -64,7 +63,6 @@ const Chat: React.FC = () => {
       if (roomsRes.success && roomsRes.data) {
         setRooms(roomsRes.data);
         
-        // Check if there's a specific room to select
         const roomId = searchParams.get('room');
         if (roomId) {
           const room = roomsRes.data.find(r => r.id === parseInt(roomId));
@@ -76,16 +74,13 @@ const Chat: React.FC = () => {
         }
       }
 
-      // Connect WebSocket
       const token = getToken();
       WebSocketService.connect(token, isAnonymous);
 
-      // Set up WebSocket listeners
       WebSocketService.onMessage((data) => {
         if (data.type === 'new_message' && data.message) {
           setMessages(prev => [...prev, data.message]);
         } else if (data.type === 'user_typing') {
-          // Handle typing indicators
           if (data.is_typing) {
             setTypingUsers(prev => [...new Set([...prev, data.anonymous_name || 'Someone'])]);
           } else {
@@ -142,19 +137,16 @@ const Chat: React.FC = () => {
 
     if (!selectedRoom) return;
 
-    // Send typing indicator
     if (isAnonymous) {
       WebSocketService.sendTyping(selectedRoom.id, true, anonymousName);
     } else {
       WebSocketService.sendTyping(selectedRoom.id, true);
     }
 
-    // Clear previous timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set new timeout to stop typing indicator
     typingTimeoutRef.current = setTimeout(() => {
       if (isAnonymous) {
         WebSocketService.sendTyping(selectedRoom.id, false, anonymousName);
@@ -175,110 +167,221 @@ const Chat: React.FC = () => {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/');
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ animation: 'spin 1s linear infinite', borderRadius: '50%', height: '48px', width: '48px', borderBottom: '2px solid #2563eb' }}></div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-gray-50 flex">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-gray-900">
-            {isAnonymous ? 'Anonymous Chat' : 'Chat Rooms'}
-          </h1>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f9fafb' }}>
+      {/* Navigation Bar */}
+      <nav style={{
+        backgroundColor: '#1f2937',
+        color: 'white',
+        padding: '0 2rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        height: '60px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+          <Link to="/" style={{ 
+            fontSize: '1.5rem', 
+            fontWeight: 'bold',
+            color: 'white',
+            textDecoration: 'none'
+          }}>
+            ChatFast
+          </Link>
+          
+          <div style={{ display: 'flex', gap: '1.5rem' }}>
+            <Link to="/chat" style={{
+              color: 'white',
+              textDecoration: 'none',
+              padding: '0.5rem 0',
+              borderBottom: '2px solid #2563eb',
+              fontWeight: '500'
+            }}>
+              Chat
+            </Link>
+            {!isAnonymous && (
+              <Link to="/friends" style={{
+                color: '#d1d5db',
+                textDecoration: 'none',
+                padding: '0.5rem 0',
+                fontWeight: '500',
+                transition: 'color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'white'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#d1d5db'}
+              >
+                Friends
+              </Link>
+            )}
+          </div>
         </div>
-        
-        <div className="flex-1 overflow-y-auto">
-          {rooms.map((room) => (
-            <ChatRoomComponent
-              key={room.id}
-              room={room}
-              isActive={selectedRoom?.id === room.id}
-              onClick={() => setSelectedRoom(room)}
-            />
-          ))}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {currentUser && !isAnonymous && (
+            <span style={{ fontSize: '0.875rem', color: '#d1d5db' }}>
+              {currentUser.username}
+            </span>
+          )}
+          {isAnonymous && (
+            <span style={{ fontSize: '0.875rem', color: '#d1d5db' }}>
+              {anonymousName}
+            </span>
+          )}
+          <button
+            onClick={handleLogout}
+            style={{
+              backgroundColor: '#dc2626',
+              color: 'white',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              borderRadius: '0.375rem',
+              cursor: 'pointer',
+              fontWeight: '500',
+              fontSize: '0.875rem'
+            }}
+          >
+            {isAnonymous ? 'Exit' : 'Logout'}
+          </button>
         </div>
-      </div>
+      </nav>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {selectedRoom ? (
-          <>
-            {/* Chat Header */}
-            <div className="bg-white border-b border-gray-200 p-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {isAnonymous ? 'Anonymous Chat' : selectedRoom.name || `Room ${selectedRoom.id}`}
-              </h2>
-              {isAnonymous && (
-                <p className="text-sm text-gray-500">You are: {anonymousName}</p>
-              )}
-            </div>
+      {/* Main Chat Container */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* Sidebar */}
+        <div style={{ width: '256px', backgroundColor: 'white', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '1rem', borderBottom: '1px solid #e5e7eb' }}>
+            <h2 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#111827', margin: 0 }}>
+              {isAnonymous ? 'Anonymous Chat' : 'Chat Rooms'}
+            </h2>
+          </div>
+          
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {rooms.map((room) => (
+              <ChatRoomComponent
+                key={room.id}
+                room={room}
+                isActive={selectedRoom?.id === room.id}
+                onClick={() => setSelectedRoom(room)}
+              />
+            ))}
+          </div>
+        </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.length === 0 ? (
-                <div className="text-center text-gray-500 mt-8">
-                  <p>No messages yet. Start the conversation!</p>
-                </div>
-              ) : (
-                messages.map((message) => (
-                  <ChatMessage
-                    key={message.id}
-                    message={message}
-                    currentUser={currentUser}
-                    isAnonymous={isAnonymous}
+        {/* Main Chat Area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {selectedRoom ? (
+            <>
+              {/* Chat Header */}
+              <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '1rem' }}>
+                <h2 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#111827', margin: 0 }}>
+                  {isAnonymous ? 'Anonymous Chat' : selectedRoom.name || `Room ${selectedRoom.id}`}
+                </h2>
+                {isAnonymous && (
+                  <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: '0.25rem 0 0 0' }}>You are: {anonymousName}</p>
+                )}
+              </div>
+
+              {/* Messages */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', backgroundColor: '#f9fafb' }}>
+                {messages.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: '#6b7280', marginTop: '2rem' }}>
+                    <p>No messages yet. Start the conversation!</p>
+                  </div>
+                ) : (
+                  messages.map((message) => (
+                    <ChatMessage
+                      key={message.id}
+                      message={message}
+                      currentUser={currentUser}
+                      isAnonymous={isAnonymous}
+                    />
+                  ))
+                )}
+                
+                {/* Typing Indicator */}
+                {typingUsers.length > 0 && (
+                  <div style={{ fontSize: '0.875rem', color: '#6b7280', fontStyle: 'italic', marginTop: '0.5rem' }}>
+                    {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+                  </div>
+                )}
+                
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Message Input */}
+              <div style={{ backgroundColor: 'white', borderTop: '1px solid #e5e7eb', padding: '1rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={handleTyping}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Type a message..."
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem 0.75rem',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '0.375rem',
+                      outline: 'none',
+                      fontSize: '0.875rem'
+                    }}
                   />
-                ))
-              )}
-              
-              {/* Typing Indicator */}
-              {typingUsers.length > 0 && (
-                <div className="text-sm text-gray-500 italic">
-                  {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+                  <button
+                    onClick={sendMessage}
+                    disabled={!newMessage.trim()}
+                    style={{
+                      padding: '0.5rem 1.5rem',
+                      backgroundColor: newMessage.trim() ? '#2563eb' : '#9ca3af',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.375rem',
+                      cursor: newMessage.trim() ? 'pointer' : 'not-allowed',
+                      fontWeight: '500',
+                      fontSize: '0.875rem'
+                    }}
+                  >
+                    Send
+                  </button>
                 </div>
-              )}
-              
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Message Input */}
-            <div className="bg-white border-t border-gray-200 p-4">
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={handleTyping}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Type a message..."
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!newMessage.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Send
-                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb' }}>
+              <div style={{ textAlign: 'center' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: '500', color: '#111827', marginBottom: '0.5rem' }}>No room selected</h3>
+                <p style={{ color: '#6b7280' }}>Choose a room from the sidebar to start chatting</p>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No room selected</h3>
-              <p className="text-gray-500">Choose a room from the sidebar to start chatting</p>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {error && (
-        <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+        <div style={{
+          position: 'fixed',
+          bottom: '1rem',
+          right: '1rem',
+          backgroundColor: '#fee2e2',
+          border: '1px solid #f87171',
+          color: '#b91c1c',
+          padding: '0.75rem 1rem',
+          borderRadius: '0.375rem',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}>
           {error}
         </div>
       )}
