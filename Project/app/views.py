@@ -110,13 +110,15 @@ def send_friend_request(request):
 
     try:
         data = json.loads(request.body)
-        receiver_id = data.get('receiver_id')
+        
+        # Change this line to accept both names
+        receiver_id = data.get('receiver_id') or data.get('to_user_id')  # ← CHANGE THIS
         
         if not receiver_id:
-            return JsonResponse({'error': 'receiver_id required'}, status=400)
-
+            return JsonResponse({'error': 'receiver_id or to_user_id required'}, status=400)
+        
         receiver = User.objects.get(id=receiver_id)
-
+        
         if user.id == receiver.id:
             return JsonResponse({'error': 'Cannot send friend request to yourself'}, status=400)
 

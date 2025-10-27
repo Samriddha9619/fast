@@ -862,8 +862,8 @@
     </div>
 
     <script>
-       const API_URL = 'http://127.0.0.1:8000/api';
-       const WS_URL = 'ws://127.0.0.1:8000/ws/';
+       const API_URL = 'http://127.0.0.1:8001/api';
+       const WS_URL = 'ws://127.0.0.1:8000/ws';
         
         let token = localStorage.getItem('token');
         let userId = localStorage.getItem('userId');
@@ -1635,13 +1635,13 @@ function addMessageToUI(data) {
             }
         }
 
-        async function respondRequest(requestId, action) {
-            try {
-                const res = await fetch(`${API_URL}/friends/respond/`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ request_id: requestId, action })
-                });
+       async function respondRequest(requestId, action) {
+    try {
+        const res = await fetch(`${API_URL}/friends/respond/${requestId}/`, {  // ← ADD requestId HERE
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ action })  // ← Change 'request_id' to just 'action'
+        });
                 
                 if (res.ok) {
                     loadFriendRequests();

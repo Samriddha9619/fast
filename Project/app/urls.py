@@ -9,8 +9,10 @@ urlpatterns = [
     path('friends/', views.get_friends, name='get_friends'),
     path('friends/requests/', views.get_friend_requests, name='get_friend_requests'),
     path('friends/requests/send/', views.send_friend_request, name='send_friend_request'),
+    path('friends/request/', views.send_friend_request, name='send_friend_request_alias'),  
     path('friends/requests/<int:request_id>/respond/', views.respond_friend_request, name='respond_friend_request'),
-    
+    path('friends/respond/<int:request_id>/', views.respond_friend_request, name='respond_alias'),  
+
     path('users/search/', views.search_users, name='search_users'),
     
     path('chatrooms/', views.get_chatrooms, name='get_chatrooms'),

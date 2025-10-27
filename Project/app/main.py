@@ -14,14 +14,13 @@ from app.models import ChatRoom, Message
 
 app = FastAPI()
 
-
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.user_to_connection: Dict[int, str] = {}
 
     async def connect(self, websocket: WebSocket, connection_id: str, user_id: Optional[int] = None):
-        await websocket.accept()
+        #await websocket.accept()
         self.active_connections[connection_id] = websocket
         if user_id:
             self.user_to_connection[user_id] = connection_id
@@ -279,18 +278,44 @@ async def websocket_endpoint(
     token: Optional[str] = Query(None),
     anonymous: bool = Query(False)
 ):
+    print("=" * 50)
+    print("🔍 WebSocket connection attempt")
+    print(f"🔍 Token: {token}")
+    print(f"🔍 Anonymous: {anonymous}")
+    print(f"🔍 Headers: {websocket.headers}")
+    print("=" * 50)
+    
+    await websocket.accept()
+    print("✅ ACCEPTED!")
     connection_id = str(uuid.uuid4())
     user_id = None
 
     if not anonymous and token:
         import jwt
         from django.conf import settings
-
+        
+        print(f"🔍 Attempting to decode token...")
+        print(f"🔍 Token: {token[:30]}...")
+        print(f"🔍 SECRET_KEY exists: {bool(settings.SECRET_KEY)}")
+    
+    
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
-            user_id = payload.get('user_id')
-        except:
+            user_id = int(payload.get('user_id'))
+            print(f"✅ Authenticated user_id: {user_id}")
+        except jwt.ExpiredSignatureError:
+            print("❌ Token expired")
+            await websocket.close(code=4001, reason="Token expired")
+            return
+        except jwt.InvalidTokenError as e:
+            print(f"❌ Invalid token: {e}")
             await websocket.close(code=4001, reason="Invalid token")
+            return
+        except Exception as e:
+            print(f"❌ Auth error: {e}")
+            import traceback
+            traceback.print_exc()  # Print full error
+            await websocket.close(code=4001, reason="Authentication failed")
             return
 
     await manager.connect(websocket, connection_id, user_id)
