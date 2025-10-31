@@ -1,0 +1,11 @@
+*.pyc
+__pycache__/
+db.sqlite3
+.git
+.gitignore
+staticfiles/
+.vscode/
+*.log
+.DS_Store
+*.sqlite3
+.pytest_cache
